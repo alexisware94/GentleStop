@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="GentleStop.css" />
+    <title>GentleStop</title>
+</head>
+
+<body>
+    <div id="GentleStopRoot">
+        <!-- Header -->
+        <header class="gs-header">
+            <div class="gs-title">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                    <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zM12 6a6 6 0 0 0-6 6h2a4 4 0 0 1 8 0h2a6 6 0 0 0-6-6zM6.5 12a2 2 0 1 0 2 2 2 2 0 0 0-2-2zm11 0a2 2 0 1 0 2 2 2 2 0 0 0-2-2z" fill="currentColor" />
+                </svg>
+                <span>GentleStop</span>
+            </div>
+            <div class="gs-status" id="gs-status">Inactive</div>
+        </header>
+
+        <!-- Mode Toggles -->
+        <section class="gs-section">
+            <div class="gs-row">
+                <label class="gs-switch-label" for="gs-mode-a-toggle">Pitch-to-Brake</label>
+                <div class="gs-switch" id="gs-mode-a-toggle" data-enabled="false" role="switch" aria-checked="false" tabindex="0"></div>
+            </div>
+            <div class="gs-row">
+                <label class="gs-switch-label" for="gs-mode-b-toggle">Button Ramping</label>
+                <div class="gs-switch" id="gs-mode-b-toggle" data-enabled="false" role="switch" aria-checked="false" tabindex="0"></div>
+            </div>
+        </section>
+
+        <!-- Settings -->
+        <section class="gs-section">
+            <div class="gs-slider-row">
+                <label for="gs-deadzone">Deadzone <span class="gs-val" id="gs-deadzone-val">10%</span></label>
+                <input type="range" id="gs-deadzone" min="0" max="50" value="10" />
+            </div>
+            <div class="gs-slider-row">
+                <label for="gs-ramp-duration">Ramp Duration <span class="gs-val" id="gs-ramp-duration-val">1.5s</span></label>
+                <input type="range" id="gs-ramp-duration" min="0.5" max="3.0" step="0.1" value="1.5" />
+            </div>
+            <div class="gs-slider-row">
+                <label for="gs-speed-limit">Yaw Speed Limit <span class="gs-val" id="gs-speed-limit-val">60kt</span></label>
+                <input type="range" id="gs-speed-limit" min="30" max="120" value="60" />
+            </div>
+            <div class="gs-row">
+                <label class="gs-switch-label" for="gs-curve-select">Sensitivity Curve</label>
+                <select id="gs-curve-select">
+                    <option value="linear" selected>Linear</option>
+                    <option value="exponential">Exponential</option>
+                </select>
+            </div>
+            <div class="gs-row">
+                <label class="gs-switch-label" for="gs-preset-select">Preset</label>
+                <select id="gs-preset-select">
+                    <option value="taxi" selected>Taxi</option>
+                    <option value="landing">Landing Rollout</option>
+                </select>
+            </div>
+        </section>
+
+        <!-- Mini HUD -->
+        <section class="gs-section gs-hud" id="gs-hud" data-visible="false">
+            <div class="gs-brake-bar" id="gs-brake-bar-left">
+                <div class="gs-bar-label">L</div>
+                <div class="gs-bar-track">
+                    <div class="gs-bar-fill" id="gs-brake-fill-left" style="--pct: 0"></div>
+    </div>
+                <div class="gs-bar-value" id="gs-brake-value-left">0%</div>
+    </div>
+            <div class="gs-brake-bar" id="gs-brake-bar-right">
+                <div class="gs-bar-label">R</div>
+                <div class="gs-bar-track">
+                    <div class="gs-bar-fill" id="gs-brake-fill-right" style="--pct: 0"></div>
+    </div>
+                <div class="gs-bar-value" id="gs-brake-value-right">0%</div>
+    </div>
+        </section>
+    </div>
+
+    <script type="text/javascript" src="GentleStop.js"></script>
+</body>
+
+</html>

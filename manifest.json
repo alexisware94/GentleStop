@@ -1,0 +1,17 @@
+{
+  "dependencies": [],
+  "name": "gentlestop-toolbar-panel",
+  "title": "GentleStop",
+  "version": "0.1.0",
+  "description": "Native MSFS Toolbox panel for pitch-axis braking and digital-button time-ramping brakes.",
+  "creator": "GentleStop",
+  "package_version": "3",
+  "metadata_image": "",
+  "metadata_keywords": [],
+  "total_package_file_size": 0,
+  "minimum_game_version": "1.36.0.0",
+  "release_notes": "",
+  "url_logo_images": [],
+  "certificate_key": "",
+  "source_type": ""
+}
