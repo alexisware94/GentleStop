@@ -2,29 +2,39 @@
   "name": "gentlestop-toolbar-panel",
   "title": "GentleStop",
   "version": "0.1.0",
-  "id": "2031becc-7bf1-4c84-95aa-96bc38558b0b",
-  "lastModified": "",
+  "id": "b1a2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+  "lastModified": "package.gjs",
   "dependencies": [],
   "content": [
     {
-      "path": "manifest.json",
-      "size": 487,
-      "date": 0
+      "path": "InGamePanels/gentlestop-ingamepanels.xml",
+      "size": 509,
+      "date": 134362868608383296
     },
     {
       "path": "html_ui/InGamePanels/GentleStop/GentleStop.css",
       "size": 3644,
-      "date": 0
+      "date": 134362855603298752
     },
     {
       "path": "html_ui/InGamePanels/GentleStop/GentleStop.html",
       "size": 3954,
-      "date": 0
+      "date": 134362855323418960
     },
     {
       "path": "html_ui/InGamePanels/GentleStop/GentleStop.js",
-      "size": 9698,
-      "date": 0
+      "size": 11830,
+      "date": 134362868397876528
+    },
+    {
+      "path": "html_ui/Textures/Menu/toolbar/ICON_TOOLBAR_GS_GENTLESTOP_PANEL.svg",
+      "size": 377,
+      "date": 134362868608423296
+    },
+    {
+      "path": "manifest.json",
+      "size": 839,
+      "date": 134362868724302592
     }
   ]
 }

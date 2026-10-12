@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="Windows-1252"?>
+<SimBase.Document Type="InGamePanels" version="1,0">
+    <Filename>gentlestop-ingamepanels.xml</Filename>
+    <InGamePanels.InGamePanelDefinition id="GS_GENTLESTOP_PANEL" Name="GentleStop" url="html_ui/InGamePanels/GentleStop/GentleStop.html" resizeDirections="both" minWidth="120" minHeight="120" defaultWidth="340" defaultHeight="520" defaultTop="33.000" defaultRight="50.000" icon="ICON_TOOLBAR_GS_GENTLESTOP_PANEL" buttonVisible="true" />
+</SimBase.Document>
