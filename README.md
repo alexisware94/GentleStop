@@ -1,32 +1,36 @@
-# GentleStop 🛬
+# 🛬 GentleStop
 
-**GentleStop** is a lightweight, zero-stutter native toolbar panel for **Microsoft Flight Simulator (MSFS 2020 / MSFS 2024)** designed to eliminate abrupt, hard landing rollouts and jerky taxi braking—especially for pilot setups without dedicated physical toe-brake pedals.
+Smooth, controllable braking for Microsoft Flight Simulator, without brake pedals.
 
-It unifies **Pitch-to-Brake modulation** (using forward elevator stick/yoke movement) and **Digital Button Time-Ramping** (gradually scaling key/button pressure over time) into a single, seamless in-sim HTML/JS interface.
+GentleStop turns your stick or yoke into a progressive brake. Push the elevator forward while taxiing and the brakes build up gradually, ease off and they release. No more tapping a key or button and getting an abrupt stop.
 
----
+## ✨ Features
 
-## ✨ Key Features
+- 🕹️ **Stick-forward braking:** your elevator input sets the brake pressure on both sides, like a brake pedal.
+- 🔄 **Invert option:** the stick direction is inverted by default to match how MSFS reports the axis. You can flip it in the panel.
+- ⏱️ **Optional pressure ramp:** let brake pressure rise smoothly over a time you choose (0.2 to 5 seconds).
+- 📈 **Response curves:** linear, or exponential for a softer start.
+- 🎚️ **Presets and tuning:** Taxi and Landing presets, plus adjustable stick deadzone.
+- 🛡️ **Built-in safety:**
+  - Never brakes while airborne.
+  - Never brakes above a speed you set (default 60 kt), so normal touchdowns are unaffected.
+  - Never brakes above a throttle level you set (default 50%), so takeoff rolls are unaffected.
+  - Respects the parking brake.
+  - Optional: no braking while the strobe lights are on (off by default).
+- 📊 **Live feedback:** left and right brake bars and a status line (Armed, Braking, Airborne, and so on).
+- 🧩 **Lives in the MSFS toolbar:** nothing to run outside the sim.
 
-* 🕹️ **Pitch-to-Brake Mode:** Map forward elevator pitch to progressive left/right toe-brake axis pressure while on the ground.
-* ⏱️ **Digital Button Ramping:** Smoothly ramp digital trigger or keyboard inputs from 0% to 100% over configurable curves.
-* 🛡️ **Airborne Safety Lockout:** Automatically disarms braking when landing gear is off the ground (`IS GEAR TOUCHING GROUND == False`) to prevent unwanted brake application on touchdown.
-* 🎛️ **In-Sim Toolbar Control:** Clean, native dark-themed HTML/JS overlay—no need to launch external `.exe` files or alt-tab mid-flight.
-* ⚡ **Zero Frame Overhead:** Highly optimized SimConnect execution with minimal CPU/RAM footprint.
+## 📦 Installation
 
----
+1. Copy the `alexisware94-alexisware94-gentlestop-toolbar-control` folder into your MSFS `Community` folder.
+2. Start MSFS and open the **GentleStop** panel from the toolbar.
+3. On the ground, push your stick forward and watch the brake bars.
 
-## 🛠️ Tech Stack & Architecture
+## ⚙️ Settings
 
-* **Frontend:** MSFS Native HTML/CSS/JavaScript (Coherent GT)
-* **Backend:** WASM / C++ Gauge & SimConnect Event Interception
-* **Compatibility:** MSFS 2020 & MSFS 2024 Community Folder Standard
+Stick deadzone, ramp duration, response curve, cutoff speed, cutoff throttle, invert and the strobe lock are all adjustable in the panel.
 
----
+## ❗ Notes
 
-## 👨‍💻 Developer & Community
-
-Created by **Alexisware**.
-
-* **License:** MIT License
-* **Support / Feedback:** [Flightsim.to Profile](https://flightsim.to) | Open an Issue on GitHub
+- This addon sends brake commands only while you are braking. When you let go, it releases the brakes once and leaves them alone.
+- The elevator and yoke will still move when you push forward, as they normally do.
