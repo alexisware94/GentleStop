@@ -1,0 +1,54 @@
+{
+  "content": [
+    {
+      "path": "contentinfo/alexisware94-gentlestop/thumbnail.jpg",
+      "size": 5556,
+      "date": 134369755400000000
+    },
+    {
+      "path": "html_ui/icons/toolbar/icon_toolbar_gentlestop_toolbar_control.svg",
+      "size": 727,
+      "date": 134393358444294158
+    },
+    {
+      "path": "html_ui/ingamepanels/gentlestoptoolbarcontrol/gentlestop.css",
+      "size": 7128,
+      "date": 134393358443747852
+    },
+    {
+      "path": "html_ui/ingamepanels/gentlestoptoolbarcontrol/gentlestop.js",
+      "size": 51749,
+      "date": 134393358443819986
+    },
+    {
+      "path": "html_ui/ingamepanels/gentlestoptoolbarcontrol/gsbrakedisplay.js",
+      "size": 3245,
+      "date": 134393358443985250
+    },
+    {
+      "path": "html_ui/ingamepanels/gentlestoptoolbarcontrol/gsdebug.js",
+      "size": 3351,
+      "date": 134393358444069170
+    },
+    {
+      "path": "html_ui/ingamepanels/gentlestoptoolbarcontrol/index.html",
+      "size": 9669,
+      "date": 134393358444135284
+    },
+    {
+      "path": "html_ui/textures/menu/toolbar/icon_toolbar_gentlestop_toolbar_control.svg",
+      "size": 727,
+      "date": 134393358444246896
+    },
+    {
+      "path": "ingamepanels/gentlestop-toolbar-control.spb",
+      "size": 835,
+      "date": 134393358443606164
+    },
+    {
+      "path": "modules/gentlestop.wasm",
+      "size": 151679,
+      "date": 134392193332528576
+    }
+  ]
+}
