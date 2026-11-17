@@ -36,6 +36,11 @@
     All compiled binaries, object files and logs are written to a unique
     directory in the system temporary folder by default, never into the
     repository, wasm-source/tests, tools/ or the panel package.
+
+    The legacy JavaScript parity harness (wasm-source/tests/run_parity.js) was
+    retired because no legitimate, publishable reference braking engine exists
+    for the public tree; see wasm-source/BUILD.md. It is reported as RETIRED,
+    never as a passing test, and never counts toward the overall result.
 #>
 [CmdletBinding()]
 param(
@@ -247,23 +252,23 @@ if ($nodeCommand) {
 # scripts; each row lists exactly what that executable needs)
 # ---------------------------------------------------------------------------
 $testMatrix = @(
-    [pscustomobject]@{ Name = 'test_core';              Sources = @('test_core.cpp');                             Defines = @();                                                         CfgHeader = $false; Description = 'Core stepping harness and parity reference binary'; StdIn = "0 0 0 0 60 0 50 0 0 0 0`n0 1 0 0 0 0 0 0.02`n" },
-    [pscustomobject]@{ Name = 'test_core_assert';       Sources = @('test_core_assert.cpp');                      Defines = @();                                                         CfgHeader = $false; Description = 'Deterministic core braking assertions' },
-    [pscustomobject]@{ Name = 'test_brake_input';       Sources = @('test_brake_input.cpp');                      Defines = @();                                                         CfgHeader = $false; Description = 'Braking input range and telemetry guards' },
-    [pscustomobject]@{ Name = 'test_input_probe';       Sources = @('test_input_probe.cpp');                      Defines = @();                                                         CfgHeader = $false; Description = 'Input-learn state machine against a mock API' },
-    [pscustomobject]@{ Name = 'test_glue';              Sources = @('test_glue.cpp', 'GentleStop.cpp');           Defines = @('GS_USE_LEARN', 'GS_TEST_CFG');                            CfgHeader = $true;  Description = 'Module glue against SimConnect/CommBus mocks' },
-    [pscustomobject]@{ Name = 'test_input_learn_glue';  Sources = @('test_input_learn_glue.cpp', 'GentleStop.cpp'); Defines = @('GS_USE_LEARN');                                          CfgHeader = $true;  Description = 'Production learned-input integration' },
-    [pscustomobject]@{ Name = 'test_elevator_suppress'; Sources = @('test_elevator_suppress.cpp', 'GentleStop.cpp'); Defines = @('GS_USE_LEARN', 'GS_USE_ELEV_SUPPRESS');                  CfgHeader = $true;  Description = 'Elevator suppression policy' },
-    [pscustomobject]@{ Name = 'test_yaxis_probe';       Sources = @('test_yaxis_probe.cpp', 'GentleStop.cpp');    Defines = @('GS_USE_LEARN', 'GS_USE_ELEV_SUPPRESS', 'GS_YAXIS_PROBE'); CfgHeader = $true;  Description = 'Y-axis diagnostic probe' }
+    [pscustomobject]@{ Name = 'test_core';              Class = 'smoke';       Sources = @('test_core.cpp');                             Defines = @();                                                         CfgHeader = $false; Description = 'Core stepping harness (smoke only, non-asserting)'; StdIn = "0 0 0 0 60 0 50 0 0 0 0`n0 1 0 0 0 0 0 0.02`n" },
+    [pscustomobject]@{ Name = 'test_core_assert';       Class = 'regression';  Sources = @('test_core_assert.cpp');                      Defines = @();                                                         CfgHeader = $false; Description = 'Deterministic core braking assertions' },
+    [pscustomobject]@{ Name = 'test_brake_input';       Class = 'regression';  Sources = @('test_brake_input.cpp');                      Defines = @();                                                         CfgHeader = $false; Description = 'Braking input range and telemetry guards' },
+    [pscustomobject]@{ Name = 'test_input_probe';       Class = 'regression';  Sources = @('test_input_probe.cpp');                      Defines = @();                                                         CfgHeader = $false; Description = 'Input-learn state machine against a mock API' },
+    [pscustomobject]@{ Name = 'test_glue';              Class = 'integration'; Sources = @('test_glue.cpp', 'GentleStop.cpp');           Defines = @('GS_USE_LEARN', 'GS_TEST_CFG');                            CfgHeader = $true;  Description = 'Module glue against SimConnect/CommBus mocks' },
+    [pscustomobject]@{ Name = 'test_input_learn_glue';  Class = 'integration'; Sources = @('test_input_learn_glue.cpp', 'GentleStop.cpp'); Defines = @('GS_USE_LEARN');                                          CfgHeader = $true;  Description = 'Production learned-input integration' },
+    [pscustomobject]@{ Name = 'test_elevator_suppress'; Class = 'integration'; Sources = @('test_elevator_suppress.cpp', 'GentleStop.cpp'); Defines = @('GS_USE_LEARN', 'GS_USE_ELEV_SUPPRESS');                  CfgHeader = $true;  Description = 'Elevator suppression policy' },
+    [pscustomobject]@{ Name = 'test_yaxis_probe';       Class = 'integration'; Sources = @('test_yaxis_probe.cpp', 'GentleStop.cpp');    Defines = @('GS_USE_LEARN', 'GS_USE_ELEV_SUPPRESS', 'GS_YAXIS_PROBE'); CfgHeader = $true;  Description = 'Y-axis diagnostic probe' }
 )
 
 $results = New-Object System.Collections.ArrayList
-$coreExePath = $null
 
 function Add-Result {
     param(
         [string]$Name,
         [string]$Kind,
+        [string]$Class,
         [string]$Build,
         [string]$Run,
         [object]$ExitCode,
@@ -271,7 +276,7 @@ function Add-Result {
         [string]$Detail = ''
     )
     [void]$results.Add([pscustomobject]@{
-        Name = $Name; Kind = $Kind; Build = $Build; Run = $Run
+        Name = $Name; Kind = $Kind; Class = $Class; Build = $Build; Run = $Run
         ExitCode = $ExitCode; Status = $Status; Detail = $Detail
     })
 }
@@ -283,7 +288,7 @@ Write-Section 'C++ regression tests'
 
 if (-not $clExe) {
     foreach ($test in $testMatrix) {
-        Add-Result -Name $test.Name -Kind 'C++' -Build 'NOT RUN' -Run 'NOT RUN' -ExitCode $null `
+        Add-Result -Name $test.Name -Kind 'C++' -Class $test.Class -Build 'NOT RUN' -Run 'NOT RUN' -ExitCode $null `
             -Status 'NOT RUN' -Detail 'MSVC cl.exe is not available'
     }
     Write-Host 'Skipped: cl.exe is not available.' -ForegroundColor Yellow
@@ -344,7 +349,7 @@ if (-not $clExe) {
         }
 
         if (-not $buildOk) {
-            Add-Result -Name $test.Name -Kind 'C++' -Build 'FAIL' -Run 'NOT RUN' -ExitCode $null -Status 'FAIL' -Detail $buildDetail
+            Add-Result -Name $test.Name -Kind 'C++' -Class $test.Class -Build 'FAIL' -Run 'NOT RUN' -ExitCode $null -Status 'FAIL' -Detail $buildDetail
             continue
         }
 
@@ -356,17 +361,15 @@ if (-not $clExe) {
         if ($link.TimedOut -or $link.ExitCode -ne 0) {
             Write-Host '   link FAILED' -ForegroundColor Red
             Show-ProcessOutput $link
-            Add-Result -Name $test.Name -Kind 'C++' -Build 'FAIL' -Run 'NOT RUN' -ExitCode $null -Status 'FAIL' -Detail "link failed (exit $($link.ExitCode)); log: $linkLog"
+            Add-Result -Name $test.Name -Kind 'C++' -Class $test.Class -Build 'FAIL' -Run 'NOT RUN' -ExitCode $null -Status 'FAIL' -Detail "link failed (exit $($link.ExitCode)); log: $linkLog"
             continue
         }
         Write-Host '   build OK'
 
-        if ($test.Name -eq 'test_core') { $coreExePath = $exePath }
-
         $runLog = Join-Path $buildDir ($test.Name + '.run.log')
         if ($null -ne $test.StdIn) {
             $run = Invoke-Process -FilePath $exePath -Arguments @() -WorkingDirectory $buildDir -TimeoutSeconds $TestTimeoutSeconds -StandardInput $test.StdIn
-            $runDetail = 'stdin-driven parity harness smoke run (deep comparison in run_parity.js); log: ' + $runLog
+            $runDetail = 'stdin-driven smoke run (non-asserting; this tree has no parity reference); log: ' + $runLog
         } else {
             $run = Invoke-Process -FilePath $exePath -Arguments @() -WorkingDirectory $buildDir -TimeoutSeconds $TestTimeoutSeconds
             $runDetail = "log: $runLog"
@@ -374,53 +377,28 @@ if (-not $clExe) {
         (($run.StdOut + "`n" + $run.StdErr).Trim()) | Set-Content -LiteralPath $runLog -Encoding UTF8
         if ($run.TimedOut) {
             Write-Host '   run FAILED: timeout' -ForegroundColor Red
-            Add-Result -Name $test.Name -Kind 'C++' -Build 'PASS' -Run 'FAIL' -ExitCode 'timeout' -Status 'FAIL' -Detail "timed out after $TestTimeoutSeconds s; log: $runLog"
+            Add-Result -Name $test.Name -Kind 'C++' -Class $test.Class -Build 'PASS' -Run 'FAIL' -ExitCode 'timeout' -Status 'FAIL' -Detail "timed out after $TestTimeoutSeconds s; log: $runLog"
         } elseif ($run.ExitCode -eq 0) {
             Write-Host '   run PASS (exit 0)' -ForegroundColor Green
             Show-ProcessOutput $run
-            Add-Result -Name $test.Name -Kind 'C++' -Build 'PASS' -Run 'PASS' -ExitCode 0 -Status 'PASS' -Detail $runDetail
+            Add-Result -Name $test.Name -Kind 'C++' -Class $test.Class -Build 'PASS' -Run 'PASS' -ExitCode 0 -Status 'PASS' -Detail $runDetail
         } else {
             Write-Host ("   run FAIL (exit {0})" -f $run.ExitCode) -ForegroundColor Red
             Show-ProcessOutput $run
-            Add-Result -Name $test.Name -Kind 'C++' -Build 'PASS' -Run 'FAIL' -ExitCode $run.ExitCode -Status 'FAIL' -Detail "log: $runLog"
+            Add-Result -Name $test.Name -Kind 'C++' -Class $test.Class -Build 'PASS' -Run 'FAIL' -ExitCode $run.ExitCode -Status 'FAIL' -Detail "log: $runLog"
         }
     }
 }
 
 # ---------------------------------------------------------------------------
-# JavaScript tests
+# JavaScript tests (the legacy parity harness is retired, see the summary)
 # ---------------------------------------------------------------------------
 Write-Section 'JavaScript tests'
 
-$parityScript = Join-Path $script:TestsDir 'run_parity.js'
 $panelScript = Join-Path $script:TestsDir 'test_panel.js'
-$panelJs = Join-Path $script:RepoRoot 'gentlestop-stage-panel\html_ui\InGamePanels\GentleStopToolbarControl\GentleStop.js'
 
-# --- parity ---------------------------------------------------------------
 if (-not $nodeExe) {
-    Add-Result -Name 'run_parity.js' -Kind 'JavaScript' -Build '-' -Run 'NOT RUN' -ExitCode $null -Status 'NOT RUN' -Detail 'Node.js is not available'
-    Write-Host '-- JavaScript parity: NOT RUN (Node.js is not available)' -ForegroundColor Yellow
-} elseif (-not $coreExePath) {
-    Add-Result -Name 'run_parity.js' -Kind 'JavaScript' -Build '-' -Run 'NOT RUN' -ExitCode $null -Status 'NOT RUN' -Detail 'test_core.exe was not built successfully'
-    Write-Host '-- JavaScript parity: NOT RUN (the C++ test_core binary was not built)' -ForegroundColor Yellow
-} else {
-    Write-Host '-- JavaScript parity (wasm-source/tests/run_parity.js)'
-    $parity = Invoke-Process -FilePath $nodeExe -Arguments @($parityScript, $panelJs, $coreExePath) -WorkingDirectory $buildDir -TimeoutSeconds $TestTimeoutSeconds
-    $parityLog = Join-Path $buildDir 'run_parity.log'
-    (($parity.StdOut + "`n" + $parity.StdErr).Trim()) | Set-Content -LiteralPath $parityLog -Encoding UTF8
-    Show-ProcessOutput $parity
-    if ($parity.TimedOut) {
-        Add-Result -Name 'run_parity.js' -Kind 'JavaScript' -Build '-' -Run 'FAIL' -ExitCode 'timeout' -Status 'FAIL' -Detail "timed out; log: $parityLog"
-    } elseif ($parity.ExitCode -eq 0) {
-        Add-Result -Name 'run_parity.js' -Kind 'JavaScript' -Build '-' -Run 'PASS' -ExitCode 0 -Status 'PASS' -Detail "log: $parityLog"
-    } else {
-        Add-Result -Name 'run_parity.js' -Kind 'JavaScript' -Build '-' -Run 'FAIL' -ExitCode $parity.ExitCode -Status 'FAIL' -Detail "log: $parityLog"
-    }
-}
-
-# --- panel ----------------------------------------------------------------
-if (-not $nodeExe) {
-    Add-Result -Name 'test_panel.js' -Kind 'JavaScript' -Build '-' -Run 'NOT RUN' -ExitCode $null -Status 'NOT RUN' -Detail 'Node.js is not available'
+    Add-Result -Name 'test_panel.js' -Kind 'JavaScript' -Class 'panel' -Build '-' -Run 'NOT RUN' -ExitCode $null -Status 'NOT RUN' -Detail 'Node.js is not available'
     Write-Host '-- Panel JavaScript test: NOT RUN (Node.js is not available)' -ForegroundColor Yellow
 } else {
     Write-Host '-- Panel JavaScript test (wasm-source/tests/test_panel.js)'
@@ -429,17 +407,27 @@ if (-not $nodeExe) {
     (($panel.StdOut + "`n" + $panel.StdErr).Trim()) | Set-Content -LiteralPath $panelLog -Encoding UTF8
     Show-ProcessOutput $panel 25
     if ($panel.TimedOut) {
-        Add-Result -Name 'test_panel.js' -Kind 'JavaScript' -Build '-' -Run 'FAIL' -ExitCode 'timeout' -Status 'FAIL' -Detail "timed out; log: $panelLog"
+        Add-Result -Name 'test_panel.js' -Kind 'JavaScript' -Class 'panel' -Build '-' -Run 'FAIL' -ExitCode 'timeout' -Status 'FAIL' -Detail "timed out; log: $panelLog"
     } elseif ($panel.ExitCode -eq 0) {
-        Add-Result -Name 'test_panel.js' -Kind 'JavaScript' -Build '-' -Run 'PASS' -ExitCode 0 -Status 'PASS' -Detail "log: $panelLog"
+        Add-Result -Name 'test_panel.js' -Kind 'JavaScript' -Class 'panel' -Build '-' -Run 'PASS' -ExitCode 0 -Status 'PASS' -Detail "log: $panelLog"
     } else {
-        Add-Result -Name 'test_panel.js' -Kind 'JavaScript' -Build '-' -Run 'FAIL' -ExitCode $panel.ExitCode -Status 'FAIL' -Detail "log: $panelLog"
+        Add-Result -Name 'test_panel.js' -Kind 'JavaScript' -Class 'panel' -Build '-' -Run 'FAIL' -ExitCode $panel.ExitCode -Status 'FAIL' -Detail "log: $panelLog"
     }
 }
+
+Write-Host ''
+Write-Host '-- Legacy parity harness: RETIRED (no legitimate public reference engine)'
 
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
+function Get-GroupStatus([object[]]$Items) {
+    if ($Items.Count -eq 0) { return 'NOT RUN' }
+    if (@($Items | Where-Object { $_.Status -eq 'FAIL' }).Count -gt 0) { return 'FAIL' }
+    if (@($Items | Where-Object { $_.Status -eq 'NOT RUN' }).Count -gt 0) { return 'PARTIAL' }
+    return 'PASS'
+}
+
 Write-Section 'Summary'
 foreach ($result in $results) {
     $color = switch ($result.Status) {
@@ -448,14 +436,20 @@ foreach ($result in $results) {
         default { 'Yellow' }
     }
     $exitText = if ($null -eq $result.ExitCode) { '-' } else { [string]$result.ExitCode }
-    Write-Host ("  [{0,-7}] {1,-24} exit {2,-8} {3}" -f $result.Status, $result.Name, $exitText, $result.Detail) -ForegroundColor $color
+    $label = if ($result.Class -eq 'smoke') { $result.Name + ' (smoke)' } else { $result.Name }
+    Write-Host ("  [{0,-7}] {1,-30} exit {2,-8} {3}" -f $result.Status, $label, $exitText, $result.Detail) -ForegroundColor $color
 }
 
 $cpp = @($results | Where-Object { $_.Kind -eq 'C++' })
-$js = @($results | Where-Object { $_.Kind -eq 'JavaScript' })
+$regression = @($results | Where-Object { $_.Class -eq 'regression' })
+$integration = @($results | Where-Object { $_.Class -eq 'integration' })
+$smoke = @($results | Where-Object { $_.Class -eq 'smoke' })
+$panelResults = @($results | Where-Object { $_.Class -eq 'panel' })
+$required = @($regression + $integration + $panelResults)
+
 $failed = @($results | Where-Object { $_.Status -eq 'FAIL' })
 $notRun = @($results | Where-Object { $_.Status -eq 'NOT RUN' })
-$passed = @($results | Where-Object { $_.Status -eq 'PASS' })
+$requiredPassed = @($required | Where-Object { $_.Status -eq 'PASS' })
 
 $buildFailed = @($cpp | Where-Object { $_.Build -eq 'FAIL' })
 $buildNotRun = @($cpp | Where-Object { $_.Build -eq 'NOT RUN' })
@@ -463,14 +457,15 @@ if ($buildFailed.Count -gt 0) { $cppBuild = 'FAIL' }
 elseif ($buildNotRun.Count -eq $cpp.Count) { $cppBuild = 'NOT RUN' }
 else { $cppBuild = 'PASS' }
 
+$smokeStatus = if ($smoke.Count -eq 0) { 'NOT RUN' } elseif ((Get-GroupStatus $smoke) -eq 'PASS') { 'PASS (non-asserting)' } else { Get-GroupStatus $smoke }
+
 Write-Host ''
-Write-Host ("  C++ build              : {0}" -f $cppBuild)
-Write-Host ("  C++ tests              : {0} passed, {1} failed, {2} not run" -f `
-    @($cpp | Where-Object { $_.Status -eq 'PASS' }).Count, @($cpp | Where-Object { $_.Status -eq 'FAIL' }).Count, @($cpp | Where-Object { $_.Status -eq 'NOT RUN' }).Count)
-$parityResult = $results | Where-Object { $_.Name -eq 'run_parity.js' } | Select-Object -First 1
-$panelResult = $results | Where-Object { $_.Name -eq 'test_panel.js' } | Select-Object -First 1
-Write-Host ("  JavaScript parity      : {0}" -f $(if ($parityResult) { $parityResult.Status } else { 'NOT RUN' }))
-Write-Host ("  Panel JavaScript test  : {0}" -f $(if ($panelResult) { $panelResult.Status } else { 'NOT RUN' }))
+Write-Host ("  C++ build               : {0}" -f $cppBuild)
+Write-Host ("  C++ regression tests    : {0} ({1} suites)" -f (Get-GroupStatus $regression), $regression.Count)
+Write-Host ("  C++ integration tests   : {0} ({1} suites)" -f (Get-GroupStatus $integration), $integration.Count)
+Write-Host ("  C++ smoke test          : {0}" -f $smokeStatus)
+Write-Host ("  Panel JavaScript        : {0}" -f (Get-GroupStatus $panelResults))
+Write-Host '  Legacy parity harness   : RETIRED (no legitimate public reference engine)'
 
 if ($failed.Count -gt 0) {
     $overall = 'FAIL'
@@ -483,8 +478,8 @@ if ($failed.Count -gt 0) {
     $color = 'Green'
 }
 Write-Host ''
-Write-Host ("  Overall result         : {0}  ({1} passed, {2} failed, {3} not run)" -f `
-    $overall, $passed.Count, $failed.Count, $notRun.Count) -ForegroundColor $color
+Write-Host ("  Overall result          : {0}  ({1} required passed, {2} failed, {3} not run; {4} smoke run(s))" -f `
+    $overall, $requiredPassed.Count, $failed.Count, $notRun.Count, $smoke.Count) -ForegroundColor $color
 
 if ($KeepBuildArtifacts) {
     Write-Host ''
