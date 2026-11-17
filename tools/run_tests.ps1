@@ -94,6 +94,11 @@ function ConvertTo-ArgumentString([string]$Value) {
 }
 
 # Runs an executable, captures both streams, enforces a timeout.
+#
+# When StandardInput is supplied, the input is written to a temporary file and the process
+# is launched through cmd.exe with < stdin redirection. This is required because .NET's
+# Process.StandardInput.Write() does not reliably deliver input to console programs that
+# use the C runtime scanf() family; shell-based redirection via cmd.exe works correctly.
 function Invoke-Process {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
@@ -103,41 +108,94 @@ function Invoke-Process {
         [string]$StandardInput = $null
     )
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $FilePath
-    $psi.Arguments = (@($Arguments | ForEach-Object { ConvertTo-ArgumentString ([string]$_) }) -join ' ')
-    $psi.WorkingDirectory = $WorkingDirectory
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.RedirectStandardInput = $PSBoundParameters.ContainsKey('StandardInput')
-    $psi.CreateNoWindow = $true
+    $stdinFile = $null
 
-    $p = New-Object System.Diagnostics.Process
-    $p.StartInfo = $psi
-    [void]$p.Start()
-    if ($psi.RedirectStandardInput) {
-        $p.StandardInput.Write($StandardInput)
-        $p.StandardInput.Close()
+    try {
+        if ($PSBoundParameters.ContainsKey('StandardInput') -and $StandardInput -ne $null) {
+            # Write the stdin payload to a temp file.
+            $stdinFile = Join-Path $WorkingDirectory ("__stdin_" + [System.IO.Path]::GetRandomFileName() + ".txt")
+            [System.IO.File]::WriteAllText($stdinFile, $StandardInput)
+
+            # Build the argument string for the target program.
+            $argStr = (@($Arguments | ForEach-Object { ConvertTo-ArgumentString ([string]$_) })) -join ' '
+
+            # Launch via cmd.exe so the < stdin redirection is handled by the shell.
+            # .NET's Process.StandardInput.Write() does not reliably deliver input to
+            # console programs that use the C runtime scanf() family.
+            if ($argStr) {
+                $cmdArg = '/c ""' + $FilePath + '" ' + $argStr + '" < "' + $stdinFile + '"'
+            } else {
+                $cmdArg = '/c ""' + $FilePath + '" < "' + $stdinFile + '"'
+            }
+
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = 'cmd.exe'
+            $psi.Arguments = $cmdArg
+            $psi.WorkingDirectory = $WorkingDirectory
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.CreateNoWindow = $true
+
+            $p = New-Object System.Diagnostics.Process
+            $p.StartInfo = $psi
+            [void]$p.Start()
+            $outTask = $p.StandardOutput.ReadToEndAsync()
+            $errTask = $p.StandardError.ReadToEndAsync()
+
+            $timedOut = $false
+            if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
+                $timedOut = $true
+                try { $p.Kill() } catch { }
+                [void]$p.WaitForExit(10000)
+            }
+
+            $stdout = ''
+            $stderr = ''
+            try { $stdout = $outTask.Result } catch { }
+            try { $stderr = $errTask.Result } catch { }
+
+            $exitCode = $null
+            try { $exitCode = $p.ExitCode } catch { }
+            $p.Dispose()
+        } else {
+            # Standard .NET Process path (no stdin redirection needed).
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $FilePath
+            $psi.Arguments = (@($Arguments | ForEach-Object { ConvertTo-ArgumentString ([string]$_) }) -join ' ')
+            $psi.WorkingDirectory = $WorkingDirectory
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.CreateNoWindow = $true
+
+            $p = New-Object System.Diagnostics.Process
+            $p.StartInfo = $psi
+            [void]$p.Start()
+            $outTask = $p.StandardOutput.ReadToEndAsync()
+            $errTask = $p.StandardError.ReadToEndAsync()
+
+            $timedOut = $false
+            if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
+                $timedOut = $true
+                try { $p.Kill() } catch { }
+                [void]$p.WaitForExit(10000)
+            }
+
+            $stdout = ''
+            $stderr = ''
+            try { $stdout = $outTask.Result } catch { }
+            try { $stderr = $errTask.Result } catch { }
+
+            $exitCode = $null
+            try { $exitCode = $p.ExitCode } catch { }
+            $p.Dispose()
+        }
+    } finally {
+        if ($stdinFile -and (Test-Path -LiteralPath $stdinFile)) {
+            try { Remove-Item -LiteralPath $stdinFile -Force -ErrorAction SilentlyContinue } catch { }
+        }
     }
-    $outTask = $p.StandardOutput.ReadToEndAsync()
-    $errTask = $p.StandardError.ReadToEndAsync()
-
-    $timedOut = $false
-    if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
-        $timedOut = $true
-        try { $p.Kill() } catch { }
-        [void]$p.WaitForExit(10000)
-    }
-
-    $stdout = ''
-    $stderr = ''
-    try { $stdout = $outTask.Result } catch { }
-    try { $stderr = $errTask.Result } catch { }
-
-    $exitCode = $null
-    try { $exitCode = $p.ExitCode } catch { }
-    $p.Dispose()
 
     return [pscustomobject]@{
         ExitCode = $exitCode
@@ -447,8 +505,10 @@ $smoke = @($results | Where-Object { $_.Class -eq 'smoke' })
 $panelResults = @($results | Where-Object { $_.Class -eq 'panel' })
 $required = @($regression + $integration + $panelResults)
 
-$failed = @($results | Where-Object { $_.Status -eq 'FAIL' })
-$notRun = @($results | Where-Object { $_.Status -eq 'NOT RUN' })
+# Overall result is based only on maintained required tests. Smoke runs are
+# reported separately and never cause the regression suite to FAIL.
+$requiredFailed = @($required | Where-Object { $_.Status -eq 'FAIL' })
+$requiredNotRun = @($required | Where-Object { $_.Status -eq 'NOT RUN' })
 $requiredPassed = @($required | Where-Object { $_.Status -eq 'PASS' })
 
 $buildFailed = @($cpp | Where-Object { $_.Build -eq 'FAIL' })
@@ -467,10 +527,10 @@ Write-Host ("  C++ smoke test          : {0}" -f $smokeStatus)
 Write-Host ("  Panel JavaScript        : {0}" -f (Get-GroupStatus $panelResults))
 Write-Host '  Legacy parity harness   : RETIRED (no legitimate public reference engine)'
 
-if ($failed.Count -gt 0) {
+if ($requiredFailed.Count -gt 0) {
     $overall = 'FAIL'
     $color = 'Red'
-} elseif ($notRun.Count -gt 0) {
+} elseif ($requiredNotRun.Count -gt 0) {
     $overall = 'PARTIAL'
     $color = 'Yellow'
 } else {
@@ -478,8 +538,8 @@ if ($failed.Count -gt 0) {
     $color = 'Green'
 }
 Write-Host ''
-Write-Host ("  Overall result          : {0}  ({1} required passed, {2} failed, {3} not run; {4} smoke run(s))" -f `
-    $overall, $requiredPassed.Count, $failed.Count, $notRun.Count, $smoke.Count) -ForegroundColor $color
+Write-Host ("  Overall result          : {0}  ({1} required passed, {2} required failed, {3} required not run; {4} smoke run(s))" -f `
+    $overall, $requiredPassed.Count, $requiredFailed.Count, $requiredNotRun.Count, $smoke.Count) -ForegroundColor $color
 
 if ($KeepBuildArtifacts) {
     Write-Host ''
