@@ -2,14 +2,17 @@
 
 The package in `gentlestop-stage-panel/` ships a prebuilt `modules/gentlestop.wasm`. Nothing in this
 repository rebuilds or modifies that binary during testing: the host regression tests compile the
-same C++ sources for a normal PC compiler, and the production SDK build is a separate, manual
-maintainer step documented under "Build the production WASM".
+same C++ sources for a normal PC compiler, the production SDK build writes a candidate module to an
+external directory outside the repository, and copying a candidate into the package is a separate,
+explicitly reviewed release step.
 
 ## What you need
 - MSFS 2024 SDK (enable Developer Mode in the sim to download it)
 - Visual Studio 2022 or newer with the "Desktop development with C++" workload (the SDK installs its
-  VS extension)
-- Python 3 for the import check and layout tool when you build the production module
+  VS extension; the host regression tests need its `cl.exe`, the production build itself uses the
+  SDK's own clang toolchain)
+- Python 3 for the import check and the read-only package validator when you build or inspect the
+  production module
 
 ## Host regression tests (no MSFS SDK required)
 
@@ -154,81 +157,162 @@ reintroduced as a separate, explicitly reviewed change.
 
 `tools/run_tests.ps1` is the regression-test entry point only. `tools/build_wasm.ps1` is the
 production module build: it needs the MSFS 2024 SDK, the SDK's clang toolchain and a real link step,
-and it is not invoked by the regression runner. A passing host regression run does not rebuild,
-replace or validate the packaged `gentlestop.wasm`.
+and it is not invoked by the regression runner. It writes its output outside the repository and
+never replaces the packaged `gentlestop.wasm`, so a passing host regression run and a successful
+production build both leave the package untouched.
 
 ## Build the production WASM
 
-This section is for maintainers producing the prebuilt `modules/gentlestop.wasm`. It is not part
-of the regression-test workflow and it modifies package files, so do not run it merely to test
-changes.
+This section is for maintainers producing a candidate `modules/gentlestop.wasm`. The build never
+modifies the repository's package: it writes the module to an external output directory, validates
+its imports/exports and prints the SHA-256 and size.
 
 ### Prerequisites
 
-- MSFS 2024 SDK, installed and reachable (the scripts default to `C:\MSFS 2024 SDK`, or the
+- MSFS 2024 SDK, installed and reachable (the script defaults to `C:\MSFS 2024 SDK`, or the
   `MSFS2024_SDK` / `MSFS_SDK` environment variable).
-- The SDK's standalone clang toolchain: `WASM\llvm\bin\clang-cl.exe`, `WASM\llvm\bin\wasm-ld.exe`
-  and the `WASM\wasi-sysroot` headers, plus a wasm32 `libc.a` somewhere under `WASM\`.
-- Python 3 on `PATH` for `tools/check_wasm_imports.py` and `tools/update_layout.py`.
+- The SDK's standalone clang toolchain: `WASM\llvm\bin\clang-cl.exe`, `WASM\llvm\bin\wasm-ld.exe`,
+  the `WASM\wasi-sysroot` headers and a wasm32 `libc.a` under `WASM\`.
+- Python 3 on `PATH` for `tools/check_wasm_imports.py`.
 - PowerShell 5.1+.
 
-### Build command (verified script behavior)
+### Build commands (verified script behavior)
 
 ```powershell
+# default: a unique directory under %TEMP%
 powershell -ExecutionPolicy Bypass -File tools\build_wasm.ps1
-# SDK in a non-default location:
+
+# SDK in a non-default location
 powershell -ExecutionPolicy Bypass -File tools\build_wasm.ps1 -Sdk "D:\MSFS 2024 SDK"
+
+# explicit external output directory
+powershell -ExecutionPolicy Bypass -File tools\build_wasm.ps1 -OutDir "$env:TEMP\gentlestop-build"
+
+# rebuild into the same external directory, replacing the previous module
+powershell -ExecutionPolicy Bypass -File tools\build_wasm.ps1 -OutDir "$env:TEMP\gentlestop-build" -Force
 ```
 
-The script compiles `wasm-source\GentleStop.cpp` with the SDK clang (`-target wasm32-wasi`,
-`-O2`, `-GS-`, `-DGS_USE_LEARN`, `-DGS_DECLARE_L_API`, production `GS_CFG_PATH`), links with
-`wasm-ld` (`--no-entry`, exports `module_init`, `module_deinit`, `malloc`, `free`,
-`__wasm_call_ctors`), then runs `tools/check_wasm_imports.py` on the result and finally
-`tools/update_layout.py`.
+The script resolves `wasm-source\`, `tools\` and the repository root from its own location, so it
+behaves the same when started from the repository root, from `wasm-source\`, from `tools\` or from
+an unrelated directory. It does not hardcode a repository path, a user profile or a Visual Studio
+installation.
 
-Output path:
+Output semantics:
 
-- With `-OutDir <dir>` the module is written to `<dir>\modules\gentlestop.wasm`.
-- Without `-OutDir` it is written to `alexisware94-gentlestop\modules\gentlestop.wasm`
-  (a legacy development folder, not the canonical package).
+- Default: `%TEMP%\gentlestop-wasm-<timestamp>-<pid>\modules\gentlestop.wasm`.
+- `-OutDir <dir>`: `<dir>\modules\gentlestop.wasm`; the intermediate object file goes to
+  `<dir>\obj\gentlestop.o`. A relative `-OutDir` is resolved against the current directory.
+- `-OutDir` inside this repository (including `gentlestop-stage-panel\`) is refused, so the approved
+  production binary cannot be overwritten by a build.
+- An existing `<dir>\modules\gentlestop.wasm` is only replaced with `-Force`; otherwise the script
+  stops and reports it.
 
-### Known build-tooling inconsistency (not changed in this milestone)
+What the script does, in order:
 
-The canonical package in this repository is `gentlestop-stage-panel\`, but the build script and the
-layout tool still default to the legacy `alexisware94-gentlestop` name:
+1. Locates the SDK, `clang-cl.exe`, `wasm-ld.exe`, the WASI sysroot and `libc.a`; every missing
+   component is reported explicitly.
+2. Compiles `wasm-source\GentleStop.cpp` with the SDK clang (`-target wasm32-wasi`, `/O2`, `/GS-`,
+   `-DGS_USE_LEARN`, `-DGS_DECLARE_L_API`, production `GS_CFG_PATH`, no libc++ include path).
+3. Links with `wasm-ld` (`--no-entry`, exports `module_init`, `module_deinit`, `malloc`, `free`,
+   `__wasm_call_ctors`, `--export-dynamic`, `--export-table`, `--no-eac-patch`, `--strip-debug`,
+   static wasi `libc.a`).
+4. Runs `tools/check_wasm_imports.py` against the file that was just produced. It must report
+   "Looks loadable".
+5. Prints the output path, size and SHA-256.
 
-- `tools/build_wasm.ps1` defaults its output folder to `alexisware94-gentlestop\modules`.
-- With `-OutDir`, it writes the module to `<OutDir>\modules` but then calls
-  `update_layout.py <OutDir>\alexisware94-gentlestop`, a folder that does not exist in that layout,
-  so the layout step fails after a successful build.
-- `tools/update_layout.py` itself defaults to the `alexisware94-gentlestop` folder next to `tools\`.
+The script does **not** run `tools/update_layout.py`, does **not** write `layout.json` or
+`manifest.json`, and does **not** copy the module into `gentlestop-stage-panel\`. Exit code `0`
+means the module exists and import validation passed; any failure returns `1`.
 
-These are recorded as findings only. Correcting the build tooling is a separate change that needs
-its own review; do not silently repoint it here.
+Reproducibility note: `GentleStop.cpp` embeds `__DATE__` and `__TIME__` in one startup log line, so
+two builds made at different times are not byte-identical (the module size is stable and only those
+date/time bytes differ). Do not treat a hash difference caused by that line as a source change.
 
-### Correct manual procedure for the canonical package
+The SDK's WASM module template (Visual Studio) remains an alternative way to produce the same
+source as a `.wasm`, but a module built that way must go through the same import check and the same
+promotion review described below.
 
-1. Build with the SDK as above into a scratch location outside the repository, for example
+## Validate the canonical package (read-only)
+
+```powershell
+# default: this repository's gentlestop-stage-panel
+python tools\update_layout.py
+
+# explicit package directory
+python tools\update_layout.py gentlestop-stage-panel --validate
+python tools\update_layout.py D:\scratch\gentlestop-package-copy
+```
+
+Validation is read-only and never writes `layout.json` or `manifest.json`. It checks that:
+
+- `manifest.json` and `layout.json` exist and parse as JSON;
+- `layout.json` has a `content` list whose entries have a non-empty string `path`, an integer `size`
+  and an integer `date`;
+- every listed file exists and its recorded size matches the file on disk;
+- the manifest has the required package metadata (`title`, `creator`, `package_version`,
+  `export_type`);
+- the manifest `total_package_size` agrees with the sum of the layout sizes (reported as a warning);
+- no package file is missing from `layout.json` (reported as a warning).
+
+Exit codes: `0` valid, `1` validation failed, `2` the package directory cannot be inspected or the
+arguments are invalid.
+
+### Path capitalization
+
+The reviewed `layout.json` stores lowercase paths, while several Git-tracked files use mixed case
+(`html_ui/InGamePanels/GentleStopToolbarControl/GentleStop.js`, for example). Validation reports
+these as case-only differences:
+
+```text
+CASE   html_ui/ingamepanels/gentlestoptoolbarcontrol/gentlestop.js -> html_ui/InGamePanels/GentleStopToolbarControl/GentleStop.js
+```
+
+The validator locates the real file case-insensitively so it can check the size, but it does not
+rewrite the recorded path and does not treat the mismatch as resolved. A case-insensitive lookup on
+Windows does not prove that MSFS finds the file on a case-sensitive filesystem, and the layout is
+kept exactly as reviewed. Do not "fix" the casing in `layout.json` as part of a normal build.
+
+## Regenerating layout metadata (explicit, opt-in)
+
+`tools/update_layout.py` can still regenerate `layout.json` and the manifest `total_package_size`,
+but only when asked to do so:
+
+```powershell
+python tools\update_layout.py --write --confirm-write D:\scratch\gentlestop-package-copy
+```
+
+- Write mode refuses the repository's canonical package unless `--allow-canonical-write` is also
+  given, because those files are reviewed release artifacts.
+- It validates the package first and aborts on structural problems (invalid JSON, invalid entry
+  types, a listed file that no longer exists) before touching any file.
+- It rewrites only `layout.json` and `manifest.json` (`total_package_size`); all other manifest
+  properties are preserved.
+- Existing layout entries keep their exact recorded path string. Only new entries use the on-disk
+  spelling. The old generator lowercased every path; that is no longer done.
+- Both files are replaced through a temporary file in the same directory, so a failure does not
+  leave a half-written layout.
+- It prints an add/remove/size-change summary and the new total.
+
+The production WASM build never runs this tool. Regeneration is a separate decision about package
+metadata, not part of compiling a module.
+
+## Promote a validated module (reviewed release step)
+
+Promotion is manual on purpose: nothing in this repository copies a build into
+`gentlestop-stage-panel\modules\`.
+
+1. Build the candidate into an external directory, for example
    `-OutDir "$env:TEMP\gentlestop-build"`.
-2. Validate the module:
-   `python tools/check_wasm_imports.py "$env:TEMP\gentlestop-build\modules\gentlestop.wasm"`.
-   It must report "Looks loadable" before shipment.
-3. Copy that file over `gentlestop-stage-panel\modules\gentlestop.wasm`.
-4. Regenerate the package layout against the canonical folder:
-   `python tools/update_layout.py gentlestop-stage-panel`.
-   This rewrites `gentlestop-stage-panel\layout.json` **and** the `total_package_size` value in
-   `gentlestop-stage-panel\manifest.json`.
-5. Review the resulting diff before committing: `update_layout.py` lowercases every recorded path
-   and recalculates sizes and timestamps.
-
-The checked-in `layout.json` and `gentlestop.wasm` are reviewed release artifacts. The regression
-workflow never regenerates or replaces them.
-
-### Visual Studio alternative
-
-You can also create a project from the SDK's WASM module template, replace the generated source with
-`GentleStop.cpp` (keep `gentlestop_core.h` next to it), build in Release, name the output
-`gentlestop.wasm`, and then follow steps 2-5 above.
+2. Confirm `tools\check_wasm_imports.py` reported "Looks loadable".
+3. Record the candidate path, size and SHA-256 printed by the build.
+4. Review the candidate (who built it, from which source revision, which SDK) with the repository
+   owner.
+5. Obtain explicit approval to replace the production package WASM.
+6. Only then copy the candidate over `gentlestop-stage-panel\modules\gentlestop.wasm`.
+7. Run `python tools\update_layout.py` and confirm the package still validates. The new module size
+   normally requires a deliberate update of the recorded `size` in `layout.json` and of
+   `total_package_size` in `manifest.json`; do that only as part of the approved promotion.
+8. Review every package diff before committing. Do not let a build regenerate metadata implicitly.
 
 ## Install the Community package
 
@@ -243,9 +327,12 @@ You can also create a project from the SDK's WASM module template, replace the g
 3. Start the sim and open the **GentleStop** panel from the toolbar.
 4. Modules load when the sim starts or a flight loads.
 
-Do not copy development folders into Community: `alexisware94-gentlestop\`, `staging\`,
-`staging-h282\`, `releases\`, `backups*\`, `candidate-build*\` and the various probe or stage test
-packages are internal and are not part of the public release.
+Do not copy anything except the canonical `gentlestop-stage-panel\` folder into Community. Any other
+folder in a development workspace (legacy package names, `staging\`, `releases\`, backup or
+candidate-build folders, probe packages) is internal and is not part of the public release.
+
+The Community copy is installed manually; neither the regression runner nor the production build
+touches it.
 
 ## Checking it works
 Open the panel: the bottom line should say `Module: running`. If it says `not loaded`, the sim did not
@@ -272,6 +359,8 @@ cannot load such a module. Fixed in v0.3:
 Run:  powershell -ExecutionPolicy Bypass -File tools\build_wasm.ps1
 (`-Sdk "C:\MSFS 2024 SDK"` if your SDK is elsewhere.) If it reports "conflicting declaration" for the
 L-variable functions, remove `-DGS_DECLARE_L_API` from the script.
+Since H2.8.7.6.4 the build writes to an external output directory (see "Build the production WASM")
+and no longer updates the package or its metadata.
 
 ## Findings (29 Oct 2026): braking input path, pitch side effect, `position` units
 
