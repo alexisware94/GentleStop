@@ -1,0 +1,20 @@
+{
+  "dependencies": [],
+  "content_type": "MISC",
+  "title": "GentleStop",
+  "manufacturer": "",
+  "creator": "alexisware94",
+  "package_version": "0.2.0",
+  "minimum_game_version": "1.9.18",
+  "minimum_compatibility_version": "9.18.0.250",
+  "export_type": "Community",
+  "builder": "Microsoft Flight Simulator 2024",
+  "package_order_hint": "UI_PATCH",
+  "release_notes": {
+    "neutral": {
+      "LastUpdate": "",
+      "OlderHistory": ""
+    }
+  },
+  "total_package_size": "234666"
+}

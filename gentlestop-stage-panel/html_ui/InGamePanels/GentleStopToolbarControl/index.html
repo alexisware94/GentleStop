@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>GentleStop</title>
+  <link rel="stylesheet" href="/SCSS/common.css" />
+  <link rel="stylesheet" href="GentleStop.css" />
+  <script type="text/javascript" src="/JS/coherent.js"></script>
+  <script type="text/javascript" src="/JS/common.js"></script>
+  <script type="text/javascript" src="/JS/buttons.js"></script>
+  <script type="text/javascript" src="/JS/dataStorage.js"></script>
+  <script type="text/javascript" src="/JS/simvar.js"></script>
+  <script type="text/javascript" src="/JS/Services/CommBus.js"></script>
+  <script type="text/javascript" src="/JS/Services/ToolBarPanels.js"></script>
+  <script type="text/javascript" src="/Pages/VCockpit/Instruments/Shared/BaseInstrument.js"></script>
+  <link rel="import" href="/templates/ingameUi/ingameUi.html" />
+  <link rel="import" href="/templates/ingameUiHeader/ingameUiHeader.html" />
+  <script type="text/javascript" src="gsdebug.js"></script>
+  <script type="text/javascript" src="gsbrakedisplay.js"></script>
+  <script type="text/javascript" src="GentleStop.js"></script>
+</head>
+<body class="border-box">
+  <ingamepanel-custom>
+    <ingame-ui id="GentleStopPanel" panel-id="PANEL_GENTLESTOP_TOOLBAR_CONTROL" title="GentleStop" class="ingameUiFrame panelInvisible" content-fit="true" resize="x" min-width="300" min-height="260">
+      <section id="mainSection" class="main-sect">
+        <!-- Panel header with title, status, and close button -->
+        <div class="gs-header" id="widget-toolbar">
+          <span class="gs-status" id="gs-status" data-active="false">Inactive</span>
+        </div>
+
+        <div id="GentleStopRoot">
+
+          <!-- Profiles -->
+          <div class="gs-section">
+            <div class="gs-row">
+              <label>Profile</label>
+              <span class="gs-seg" id="gs-profile-seg">
+                <button type="button" class="gs-seg-btn" data-value="1" data-active="true">1</button>
+                <button type="button" class="gs-seg-btn" data-value="2" data-active="false">2</button>
+                <button type="button" class="gs-seg-btn" data-value="3" data-active="false">3</button>
+              </span>
+            </div>
+            <div class="gs-row">
+              <span class="gs-note-inline">Changes save to the selected profile automatically.</span>
+              <button type="button" id="gs-reset-btn" class="gs-btn">Reset profile</button>
+            </div>
+          </div>
+
+          <!-- MAIN CONTROL: Stick-forward braking (single obvious enable/disable) -->
+          <div class="gs-section gs-section-main">
+            <div class="gs-row">
+              <label for="gs-enabled-toggle">Stick-forward braking</label>
+              <button type="button" id="gs-enabled-toggle" class="gs-switch" data-enabled="true" aria-checked="true" role="switch"></button>
+            </div>
+            <span class="gs-note-inline">When enabled, pushing the stick/yoke forward applies the brakes progressively. The brake releases when you relax the stick.</span>
+          </div>
+
+          <!-- OPTIONAL: physical activation button (separate from the main control) -->
+          <div class="gs-section gs-section-activation">
+            <div class="gs-row">
+              <label class="gs-label-stack" for="gs-learn-activation"><span>Optional activation button</span><span id="gs-activation-status" class="gs-sublabel">Automatic (no button configured)</span></label>
+              <span class="gs-padbox"><button type="button" id="gs-clear-activation" class="gs-btn" data-disabled="true">Clear Binding</button><button type="button" id="gs-learn-activation" class="gs-btn">Learn</button></span>
+            </div>
+            <span class="gs-note-inline">Optional: a physical button can be required to arm stick-forward braking. In Automatic mode braking is always armed when the main control is on. Learn a button to make the physical button control arming instead.</span>
+          </div>
+
+          <!-- Options -->
+          <div class="gs-section">
+            <div class="gs-row">
+              <label for="gs-invert-toggle">Invert stick direction</label>
+              <button type="button" id="gs-invert-toggle" class="gs-switch" data-enabled="false" aria-checked="false" role="switch"></button>
+            </div>
+            <div class="gs-row">
+              <label for="gs-strobe-toggle">No braking while strobe lights are on</label>
+              <button type="button" id="gs-strobe-toggle" class="gs-switch" data-enabled="false" aria-checked="false" role="switch"></button>
+            </div>
+            <div class="gs-row">
+              <label for="gs-speed-toggle" class="gs-label-stack"><span>Limit braking by speed</span><span class="gs-sublabel">(brakes are never applied while airborne)</span></label>
+              <button type="button" id="gs-speed-toggle" class="gs-switch" data-enabled="false" aria-checked="false" role="switch"></button>
+            </div>
+            <div class="gs-slider-row" id="gs-speed-limit-row" style="display:none">
+              <label for="gs-speed-limit"><span>No braking above</span><span id="gs-speed-limit-val" class="gs-val">60 kt</span></label>
+              <input type="range" id="gs-speed-limit" min="10" max="200" step="5" value="60" />
+            </div>
+            <div class="gs-row">
+              <label for="gs-throttle-toggle">Limit braking by throttle</label>
+              <button type="button" id="gs-throttle-toggle" class="gs-switch" data-enabled="true" aria-checked="true" role="switch"></button>
+            </div>
+            <div class="gs-slider-row" id="gs-throttle-limit-row">
+              <label for="gs-throttle-limit"><span>No braking above</span><span id="gs-throttle-limit-val" class="gs-val">50%</span></label>
+              <input type="range" id="gs-throttle-limit" min="0" max="100" step="5" value="50" />
+            </div>
+          </div>
+
+          <!-- Tuning -->
+          <div class="gs-section">
+            <div class="gs-row">
+              <label>Response Curve</label>
+              <span class="gs-seg" id="gs-curve-seg">
+                <button type="button" class="gs-seg-btn" data-value="linear" data-active="true">Linear</button>
+                <button type="button" class="gs-seg-btn" data-value="exponential" data-active="false">Smooth start</button>
+              </span>
+            </div>
+            <div class="gs-slider-row">
+              <label for="gs-deadzone"><span>Stick Deadzone</span><span id="gs-deadzone-val" class="gs-val">10%</span></label>
+              <input type="range" id="gs-deadzone" min="0" max="50" step="1" value="10" />
+            </div>
+            <div class="gs-slider-row">
+              <label for="gs-smoothing"><span>Brake smoothing</span><span id="gs-smoothing-val" class="gs-val">30%</span></label>
+              <input type="range" id="gs-smoothing" min="0" max="100" step="5" value="30" />
+            </div>
+            <div class="gs-slider-row">
+              <label for="gs-jump"><span>Big-move response</span><span id="gs-jump-val" class="gs-val">70%</span></label>
+              <input type="range" id="gs-jump" min="0" max="100" step="5" value="70" />
+              <span class="gs-note-inline">Higher = sudden big stick moves get less smoothing. Small moves stay soft.</span>
+            </div>
+          </div>
+
+          <!-- Disclosure: expand/collapse the Advanced → Support section -->
+          <div class="gs-row">
+            <button type="button" id="gs-advanced-toggle" class="gs-btn">Advanced</button>
+          </div>
+
+          <!-- Advanced → Support (technical information, out of the normal panel flow).
+               Collapsed by default; expand via the disclosure toggle above.         -->
+          <div class="gs-section gs-section-advanced" id="gs-advanced-section" style="display:none">
+            <div class="gs-row">
+              <label>Advanced</label>
+              <span class="gs-seg" id="gs-advanced-seg">
+                <button type="button" class="gs-seg-btn" data-value="support" data-active="true">Support</button>
+              </span>
+            </div>
+            <div class="gs-row">
+              <button type="button" id="gs-copy-diagnostics" class="gs-btn">Copy Diagnostics</button>
+            </div>
+            <span class="gs-note-inline">For bug reports: copies controller list, matched activation device, saved identity, registration result, and module state to the clipboard. Contains internal identifiers only; not needed for normal use.</span>
+          </div>
+
+          <!-- Live Brake HUD -->
+          <div class="gs-section">
+            <div class="gs-hud" id="gs-hud" data-visible="true">
+              <div class="gs-brake-bar">
+                <span class="gs-bar-label">L</span>
+                <div class="gs-bar-track"><div class="gs-bar-fill" id="gs-brake-fill-left" style="width: 0%;"></div></div>
+                <span class="gs-bar-value" id="gs-brake-value-left">0%</span>
+              </div>
+              <div class="gs-brake-bar">
+                <span class="gs-bar-label">R</span>
+                <div class="gs-bar-track"><div class="gs-bar-fill" id="gs-brake-fill-right" style="width: 0%;"></div></div>
+                <span class="gs-bar-value" id="gs-brake-value-right">0%</span>
+              </div>
+            </div>
+            <div class="gs-diag" id="gs-diag">...</div>
+          </div>
+        </div>
+      </section>
+    </ingame-ui>
+  </ingamepanel-custom>
+</body>
+</html>
