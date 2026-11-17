@@ -22,7 +22,7 @@ GentleStop turns your stick or yoke into a progressive brake. Push the elevator 
 
 ## 📦 Installation
 
-1. Copy the `alexisware94-alexisware94-gentlestop-toolbar-control` folder into your MSFS `Community` folder.
+1. Copy the `gentlestop-stage-panel` folder into your MSFS `Community` folder.
 2. Start MSFS and open the **GentleStop** panel from the toolbar.
 3. On the ground, push your stick forward and watch the brake bars.
 

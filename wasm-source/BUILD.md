@@ -1,21 +1,34 @@
 # Building the GentleStop WASM module
 
-**Not compiled against the real SDK yet.** I had no MSFS SDK available, so this source has only been
-checked on a normal PC compiler against stand-in headers (see the host regression-test section below).
-Expect to possibly fix a small API detail on the first real build. Send me the compiler errors and I'll
-fix them.
+The package in `gentlestop-stage-panel/` ships a prebuilt `modules/gentlestop.wasm`. Nothing in this
+repository rebuilds or modifies that binary during testing: the host regression tests compile the
+same C++ sources for a normal PC compiler, and the production SDK build is a separate, manual
+maintainer step documented under "Build the production WASM".
 
 ## What you need
 - MSFS 2024 SDK (enable Developer Mode in the sim to download it)
-- Visual Studio 2022 with the "Desktop development with C++" workload (the SDK installs its VS extension)
+- Visual Studio 2022 or newer with the "Desktop development with C++" workload (the SDK installs its
+  VS extension)
+- Python 3 for the import check and layout tool when you build the production module
 
 ## Host regression tests (no MSFS SDK required)
 
-The retained regression tests run on a normal Windows PC against the MSFS/SimConnect stand-in
+The maintained regression tests run on a normal Windows PC against the MSFS/SimConnect stand-in
 headers in `tests/stubs/`. They exercise the braking core, the module glue against simulated
-SimConnect / Communication Bus / L-variable services, the learned activation input and the two
-optional probe headers. **They do not build the production WASM module and do not need the MSFS
-SDK.** Building the production module remains the separate workflow described under "Build".
+SimConnect / Communication Bus / L-variable services, the learned activation input, the elevator
+suppression policy and the two optional probe headers. **They do not build the production WASM
+module and do not need the MSFS SDK.**
+
+The maintained suite is:
+
+- 3 assertion-based C++ suites (`test_core_assert`, `test_brake_input`, `test_input_probe`),
+- 4 C++ integration suites that compile `GentleStop.cpp` (`test_glue`, `test_input_learn_glue`,
+  `test_elevator_suppress`, `test_yaxis_probe`),
+- 1 non-asserting C++ smoke run (`test_core`),
+- 1 panel JavaScript test (`test_panel.js`).
+
+The legacy JavaScript parity harness (`run_parity.js`) has been retired; see
+"Retired legacy parity harness" below.
 
 ### Prerequisites
 - Windows PowerShell 5.1 or PowerShell 7+.
@@ -61,7 +74,7 @@ that redirects `GS_CFG_PATH` into the temporary build directory, so no test touc
 
 | Executable | Sources | Definitions | Covers |
 |---|---|---|---|
-| `test_core` | `test_core.cpp` | none | Core stepping harness; stdin-driven, used by the parity test |
+| `test_core` | `test_core.cpp` | none | Non-asserting smoke run: stdin-driven stepping harness |
 | `test_core_assert` | `test_core_assert.cpp` | none | Deterministic core braking assertions |
 | `test_brake_input` | `test_brake_input.cpp` | none | Braking input range and telemetry guards |
 | `test_input_probe` | `test_input_probe.cpp` | none | Input-learn state machine against a mock API |
@@ -71,45 +84,71 @@ that redirects `GS_CFG_PATH` into the temporary build directory, so no test touc
 | `test_yaxis_probe` | `test_yaxis_probe.cpp`, `GentleStop.cpp` | `GS_USE_LEARN`, `GS_USE_ELEV_SUPPRESS`, `GS_YAXIS_PROBE` | Y-axis diagnostic probe |
 
 `test_core` is not a self-checking assertion suite. It reads one settings line and then input rows
-from standard input and prints one line per step; the runner smoke-runs it with one deterministic
-step, and `tests/run_parity.js` drives it for the actual comparison.
+from standard input, prints one line per step and exits 0 for valid input. The runner therefore runs
+it only as a smoke test with one deterministic step, labels it `(smoke)` in the per-test summary and
+reports it separately as `C++ smoke test: PASS (non-asserting)`. Its exit code is not proof of
+braking correctness, and it is not counted as an assertion-based regression suite.
 
-The two JavaScript tests are then executed with the discovered `node` executable:
+One JavaScript test is executed with the discovered `node` executable:
 
-- `wasm-source/tests/run_parity.js` - randomized comparison of the C++ core against a reference
-  JavaScript braking engine. The runner passes the canonical panel source as the first argument and
-  the freshly built `test_core` executable as the second argument. You can also run it manually:
-  `node wasm-source/tests/run_parity.js [panel-js] [test-core-executable]`; the executable path may
-  instead be supplied through the `GS_TEST_CORE_EXE` environment variable.
 - `wasm-source/tests/test_panel.js` - panel smoke test over the canonical
   `gentlestop-stage-panel/` package, covering the legacy, legacy-unbound and 2024 routes. It
   resolves every file from its own location and needs no private `staging/` directory.
 
-Both scripts work from any current directory and exit non-zero on failure.
+The panel test and the runner work from any current directory and exit non-zero on failure.
 
 ### Results and exit codes
 
 The runner prints a per-test status (`PASS`, `FAIL` or `NOT RUN`), the individual exit codes, a
-per-area summary and an overall result. It continues through the whole matrix so every available
+per-class summary and an overall result. It continues through the whole matrix so every available
 result is reported, then:
 
 | Exit code | Meaning |
 |---|---|
-| `0` | Every required C++ and JavaScript test passed. |
-| `1` | At least one test was executed and failed. |
-| `2` | At least one required test could not run because a prerequisite was missing; the overall result is `PARTIAL`, never `PASS`. |
+| `0` | Every maintained required test passed (the retired parity harness does not count). |
+| `1` | At least one maintained test was executed and failed. |
+| `2` | At least one maintained test could not run because a prerequisite was missing; the overall result is `PARTIAL`, never `PASS`. |
+
+The summary separates the classes explicitly:
+
+```text
+C++ regression tests    : PASS (3 suites)
+C++ integration tests   : PASS (4 suites)
+C++ smoke test          : PASS (non-asserting)
+Panel JavaScript        : PASS
+Legacy parity harness   : RETIRED (no legitimate public reference engine)
+Overall result          : PASS  (8 required passed, 0 failed, 0 not run; 1 smoke run(s))
+```
 
 A missing `cl.exe` or `node.exe` is reported explicitly and never counted as a pass.
 
-### Known limitation of the parity harness
+### Retired legacy parity harness (H2.8.7.6.3)
 
-`run_parity.js` was written to compare the C++ core with the reference braking engine that used to
-live in the panel JavaScript. The canonical public panel package
-(`gentlestop-stage-panel/html_ui/InGamePanels/GentleStopToolbarControl/GentleStop.js`) does not
-contain that reference engine, so with the default arguments the harness reports that the reference
-markers are missing and exits `1`; `run_tests.ps1` reports this as `FAIL` rather than hiding it.
-Passing a panel source that does contain the reference engine as the first argument restores the
-original comparison. Keeping or retiring this harness is an open owner decision.
+`wasm-source/tests/run_parity.js` was removed from the public branch. It used to compare the C++
+core against a reference JavaScript braking engine delimited by
+`// Why braking is NOT allowed` ... `function writeSimVars`. That engine is not part of this
+repository:
+
+- The canonical panel (`gentlestop-stage-panel/.../GentleStop.js`) is the toolbar UI and CommBus
+  client; the braking itself runs in the WASM module, and the panel contains neither marker.
+- A search of every tracked revision in this repository (58 commits, all file types) found those
+  markers only inside the harness itself. No tracked revision ever contained that JavaScript engine.
+- The available local working copies outside Git also lack it, and private development material
+  must not be published.
+
+With no legitimate, distributable reference implementation, the harness could never produce a
+meaningful result for contributors. The owner authorized its retirement rather than leaving a
+known-failing test in the maintained suite.
+
+Retirement is **not** a passing parity result. It does not prove that the C++ core matches the
+original JavaScript engine, and this public tree no longer contains any test that makes that
+comparison. A historical development-time comparison against a private engine (previously described
+as 180,000 randomized steps) is not reproducible from this repository and must not be cited as
+current evidence. The substantive coverage that remains is the assertion-based regression suites,
+the integration suites and the panel test above.
+
+If someone later provides a legitimate, distributable reference engine, a parity test can be
+reintroduced as a separate, explicitly reviewed change.
 
 ### Host tests versus the production WASM
 
@@ -118,16 +157,95 @@ production module build: it needs the MSFS 2024 SDK, the SDK's clang toolchain a
 and it is not invoked by the regression runner. A passing host regression run does not rebuild,
 replace or validate the packaged `gentlestop.wasm`.
 
-## Build
-1. In Visual Studio create a new project from the SDK's WASM module template
-   (search "MSFS" in "Create a new project"), or start from a standalone-module sample in the SDK.
-   Choose the MSFS 2024 platform/configuration if the template offers one.
-2. Replace the generated source with `GentleStop.cpp` and add `gentlestop_core.h` next to it.
-3. Build in Release. Name the output `gentlestop.wasm`.
-4. Put it in the add-on at `alexisware94-gentlestop/modules/gentlestop.wasm`.
-5. Run `python tools/update_layout.py` (MSFS only loads files listed in layout.json).
-6. Copy the whole `alexisware94-gentlestop` folder into your Community folder, replacing the old one.
-7. Start the sim. Modules are loaded when the sim starts / a flight loads.
+## Build the production WASM
+
+This section is for maintainers producing the prebuilt `modules/gentlestop.wasm`. It is not part
+of the regression-test workflow and it modifies package files, so do not run it merely to test
+changes.
+
+### Prerequisites
+
+- MSFS 2024 SDK, installed and reachable (the scripts default to `C:\MSFS 2024 SDK`, or the
+  `MSFS2024_SDK` / `MSFS_SDK` environment variable).
+- The SDK's standalone clang toolchain: `WASM\llvm\bin\clang-cl.exe`, `WASM\llvm\bin\wasm-ld.exe`
+  and the `WASM\wasi-sysroot` headers, plus a wasm32 `libc.a` somewhere under `WASM\`.
+- Python 3 on `PATH` for `tools/check_wasm_imports.py` and `tools/update_layout.py`.
+- PowerShell 5.1+.
+
+### Build command (verified script behavior)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\build_wasm.ps1
+# SDK in a non-default location:
+powershell -ExecutionPolicy Bypass -File tools\build_wasm.ps1 -Sdk "D:\MSFS 2024 SDK"
+```
+
+The script compiles `wasm-source\GentleStop.cpp` with the SDK clang (`-target wasm32-wasi`,
+`-O2`, `-GS-`, `-DGS_USE_LEARN`, `-DGS_DECLARE_L_API`, production `GS_CFG_PATH`), links with
+`wasm-ld` (`--no-entry`, exports `module_init`, `module_deinit`, `malloc`, `free`,
+`__wasm_call_ctors`), then runs `tools/check_wasm_imports.py` on the result and finally
+`tools/update_layout.py`.
+
+Output path:
+
+- With `-OutDir <dir>` the module is written to `<dir>\modules\gentlestop.wasm`.
+- Without `-OutDir` it is written to `alexisware94-gentlestop\modules\gentlestop.wasm`
+  (a legacy development folder, not the canonical package).
+
+### Known build-tooling inconsistency (not changed in this milestone)
+
+The canonical package in this repository is `gentlestop-stage-panel\`, but the build script and the
+layout tool still default to the legacy `alexisware94-gentlestop` name:
+
+- `tools/build_wasm.ps1` defaults its output folder to `alexisware94-gentlestop\modules`.
+- With `-OutDir`, it writes the module to `<OutDir>\modules` but then calls
+  `update_layout.py <OutDir>\alexisware94-gentlestop`, a folder that does not exist in that layout,
+  so the layout step fails after a successful build.
+- `tools/update_layout.py` itself defaults to the `alexisware94-gentlestop` folder next to `tools\`.
+
+These are recorded as findings only. Correcting the build tooling is a separate change that needs
+its own review; do not silently repoint it here.
+
+### Correct manual procedure for the canonical package
+
+1. Build with the SDK as above into a scratch location outside the repository, for example
+   `-OutDir "$env:TEMP\gentlestop-build"`.
+2. Validate the module:
+   `python tools/check_wasm_imports.py "$env:TEMP\gentlestop-build\modules\gentlestop.wasm"`.
+   It must report "Looks loadable" before shipment.
+3. Copy that file over `gentlestop-stage-panel\modules\gentlestop.wasm`.
+4. Regenerate the package layout against the canonical folder:
+   `python tools/update_layout.py gentlestop-stage-panel`.
+   This rewrites `gentlestop-stage-panel\layout.json` **and** the `total_package_size` value in
+   `gentlestop-stage-panel\manifest.json`.
+5. Review the resulting diff before committing: `update_layout.py` lowercases every recorded path
+   and recalculates sizes and timestamps.
+
+The checked-in `layout.json` and `gentlestop.wasm` are reviewed release artifacts. The regression
+workflow never regenerates or replaces them.
+
+### Visual Studio alternative
+
+You can also create a project from the SDK's WASM module template, replace the generated source with
+`GentleStop.cpp` (keep `gentlestop_core.h` next to it), build in Release, name the output
+`gentlestop.wasm`, and then follow steps 2-5 above.
+
+## Install the Community package
+
+1. Copy the whole canonical package folder `gentlestop-stage-panel\` (containing `manifest.json`,
+   `layout.json`, `html_ui\`, `contentinfo\`, `InGamePanels\` and `modules\`) into:
+   `%APPDATA%\Microsoft Flight Simulator 2024\Packages\Community\`
+2. Keep the folder name: the destination is
+   `...\Packages\Community\gentlestop-stage-panel\`. MSFS mounts a Community folder that contains
+   `manifest.json` and `layout.json`; the folder name is the package folder identity and must be
+   unique, while the panel name shown in the toolbar comes from the manifest title `GentleStop`.
+   Renaming the folder is possible but not required and must stay consistent between updates.
+3. Start the sim and open the **GentleStop** panel from the toolbar.
+4. Modules load when the sim starts or a flight loads.
+
+Do not copy development folders into Community: `alexisware94-gentlestop\`, `staging\`,
+`staging-h282\`, `releases\`, `backups*\`, `candidate-build*\` and the various probe or stage test
+packages are internal and are not part of the public release.
 
 ## Checking it works
 Open the panel: the bottom line should say `Module: running`. If it says `not loaded`, the sim did not
@@ -135,10 +253,11 @@ load the .wasm (check the modules folder + layout.json). In Developer Mode the c
 "GentleStop module ready" at startup. Then close the panel and taxi: brakes should keep following the stick.
 
 ## How it fits together
-- `gentlestop_core.h` the braking logic, a line-by-line port of the original JS (tested: identical output
-  to the original JS over 180,000 randomized steps, see `tests/run_parity.js`).
+- `gentlestop_core.h` is the braking logic, ported from the original JavaScript engine. That
+  development-time comparison used a private JS engine that is **not** part of this repository; the
+  public parity harness has been retired (see above), so this tree does not re-prove equivalence.
 - `GentleStop.cpp` SimConnect glue: reads yoke/on-ground/speed/strobe/throttle/parking every sim frame
-  and sends AXIS_LEFT/RIGHT_BRAKE_SET, exactly like the JS did.
+  and sends AXIS_LEFT/RIGHT_BRAKE_SET, as the JS engine did.
 - Settings: panel -> L:GS_* variables -> module. The module also saves them to `\work\gentlestop.cfg`,
   so your last profile is active after a restart even if you never open the panel.
 - Safety: the module releases the brakes when it unloads and never touches the brakes while idle.
