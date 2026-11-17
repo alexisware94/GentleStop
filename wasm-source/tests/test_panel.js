@@ -24,10 +24,24 @@ let triggerFails = false, callFails = false, wasmFails = false;
 // GS_TEST_ROUTE=new runs the 2024 RegisterCommBusListener/callWasm mock (all
 // commands must then use the documented .callWasm route).
 const TEST_ROUTE = process.env.GS_TEST_ROUTE || "legacy";
-// The panel source to evaluate. Defaults to the staged GentleStop.js when the
-// test is run directly (no argv[2]); the parent process passes it explicitly.
-const PANEL_JS = process.argv[2] || path.join(__dirname, "..", "..", "staging",
-  "gentlestop-stage-panel", "html_ui", "InGamePanels", "GentleStopToolbarControl", "GentleStop.js");
+// The panel sources to evaluate. Defaults to the canonical public package
+// (gentlestop-stage-panel/) when the test is run directly (no argv[2]); the
+// parent process passes the panel source explicitly. Sibling files are
+// resolved from the panel source's own directory, so an explicit path works
+// from any current directory and never needs a private staging/ folder.
+const repoRoot = path.resolve(__dirname, "..", "..");
+const defaultPanelJs = path.join(repoRoot, "gentlestop-stage-panel", "html_ui",
+  "InGamePanels", "GentleStopToolbarControl", "GentleStop.js");
+const PANEL_JS = process.argv[2] ? path.resolve(process.argv[2]) : defaultPanelJs;
+const PANEL_DIR = path.dirname(PANEL_JS);
+const DISPLAY_JS = path.join(PANEL_DIR, "gsbrakedisplay.js");
+const DEBUG_JS = path.join(PANEL_DIR, "gsdebug.js");
+for (const required of [PANEL_JS, DISPLAY_JS, DEBUG_JS]) {
+  if (!fs.existsSync(required)) {
+    process.stderr.write("PANEL TEST SETUP FAILED: missing canonical panel file: " + required + "\n");
+    process.exit(2);
+  }
+}
 const useCallWasm = TEST_ROUTE === "new" ? 1 : 0;
 const UNBOUND = TEST_ROUTE === "legacy-unbound";   // sim-host case: the legacy
 // listener exists but the engine ASYNCHRONOUSLY rejects the call route (the
@@ -36,7 +50,7 @@ const UNBOUND = TEST_ROUTE === "legacy-unbound";   // sim-host case: the legacy
 const dbg = (...x) => process.stderr.write("DBG " + x.map(v => JSON.stringify(v)).join(" ") + "\n");
 // The panel loads the REAL display-math module in the sim (script tag), the
 // test must exercise that same code, not a mock.
-const gsBrake = require("../../staging/gentlestop-stage-panel/html_ui/InGamePanels/GentleStopToolbarControl/gsbrakedisplay.js");
+const gsBrake = require(DISPLAY_JS);
 global.GentleStopDisplayMath = gsBrake;
 // MSFS 2024-documented registration; when useCallWasm the panel must take this route.
 global.RegisterCommBusListener = function () {
@@ -107,8 +121,7 @@ async function runScenario() {
   if (UNBOUND) chk(window.__gsTriggerSends === commands.length, "initial push was not delivered exactly once via the trigger fallback");
   // Overlay (gsdebug.js) is opt-in: in the NORMAL configuration it must not
   // create or render anything; with gsDebug=1 (localStorage) it must.
-  const gsDebugSrc = fs.readFileSync(path.join(__dirname, "..", "..", "staging",
-    "gentlestop-stage-panel", "html_ui", "InGamePanels", "GentleStopToolbarControl", "gsdebug.js"), "utf8");
+  const gsDebugSrc = fs.readFileSync(DEBUG_JS, "utf8");
   domCreates = 0; domBoxAppends = 0; lastCreated = null;
   eval(gsDebugSrc);                                   // normal configuration
   (docEvents.DOMContentLoaded || (() => {}))();

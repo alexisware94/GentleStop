@@ -1,12 +1,122 @@
 # Building the GentleStop WASM module
 
 **Not compiled against the real SDK yet.** I had no MSFS SDK available, so this source has only been
-checked on a normal PC compiler against stand-in headers (see `tests/`). Expect to possibly fix a small
-API detail on the first real build. Send me the compiler errors and I'll fix them.
+checked on a normal PC compiler against stand-in headers (see the host regression-test section below).
+Expect to possibly fix a small API detail on the first real build. Send me the compiler errors and I'll
+fix them.
 
 ## What you need
 - MSFS 2024 SDK (enable Developer Mode in the sim to download it)
 - Visual Studio 2022 with the "Desktop development with C++" workload (the SDK installs its VS extension)
+
+## Host regression tests (no MSFS SDK required)
+
+The retained regression tests run on a normal Windows PC against the MSFS/SimConnect stand-in
+headers in `tests/stubs/`. They exercise the braking core, the module glue against simulated
+SimConnect / Communication Bus / L-variable services, the learned activation input and the two
+optional probe headers. **They do not build the production WASM module and do not need the MSFS
+SDK.** Building the production module remains the separate workflow described under "Build".
+
+### Prerequisites
+- Windows PowerShell 5.1 or PowerShell 7+.
+- MSVC `cl.exe` in the environment: Visual Studio 2022 or newer with the "Desktop development
+  with C++" workload.
+- Node.js on `PATH` for the JavaScript tests.
+
+`cl.exe` is normally not on the default `PATH`. Open an **x64 Native Tools Command Prompt for VS**
+(or a **Developer PowerShell for Visual Studio**) and run the commands from there, or call
+`vcvars64.bat` from a Visual Studio installation in a console before starting PowerShell. You can
+also pass the full path explicitly with `-CompilerPath`. The script never hardcodes a Visual Studio
+installation path.
+
+### Run all regression tests
+From the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1
+```
+
+Optional parameters:
+
+| Parameter | Meaning |
+|---|---|
+| `-BuildDirectory <path>` | Use a specific build directory (must be outside the repository). |
+| `-CompilerPath <cl.exe>` | Use a specific MSVC compiler executable. |
+| `-TestTimeoutSeconds <n>` | Per-process timeout in seconds (default `300`). |
+| `-KeepBuildArtifacts` | Keep the generated binaries, object files and logs for debugging. |
+
+Compiled test executables, object files, generated configuration headers and logs are written to a
+unique directory under the system temporary folder (for example
+`%TEMP%\gentlestop-tests-<timestamp>-<pid>`). The runner never writes them into `wasm-source/`,
+`wasm-source/tests/`, `tools/`, the panel package or the installed Community package. The directory
+is removed at the end unless `-KeepBuildArtifacts` is given, and its path is always printed.
+
+### What the runner builds and executes
+
+Each C++ executable gets exactly the sources and defines it needs; the runner does not apply one
+common set of definitions to every test. The include path order is `tests/stubs`, `tests`,
+`wasm-source`; the tests that compile `GentleStop.cpp` also receive a generated force-include header
+that redirects `GS_CFG_PATH` into the temporary build directory, so no test touches
+`\work\gentlestop.cfg`.
+
+| Executable | Sources | Definitions | Covers |
+|---|---|---|---|
+| `test_core` | `test_core.cpp` | none | Core stepping harness; stdin-driven, used by the parity test |
+| `test_core_assert` | `test_core_assert.cpp` | none | Deterministic core braking assertions |
+| `test_brake_input` | `test_brake_input.cpp` | none | Braking input range and telemetry guards |
+| `test_input_probe` | `test_input_probe.cpp` | none | Input-learn state machine against a mock API |
+| `test_glue` | `test_glue.cpp`, `GentleStop.cpp` | `GS_USE_LEARN`, `GS_TEST_CFG` | Module glue against SimConnect/CommBus mocks |
+| `test_input_learn_glue` | `test_input_learn_glue.cpp`, `GentleStop.cpp` | `GS_USE_LEARN` | Production learned-input integration |
+| `test_elevator_suppress` | `test_elevator_suppress.cpp`, `GentleStop.cpp` | `GS_USE_LEARN`, `GS_USE_ELEV_SUPPRESS` | Elevator suppression policy |
+| `test_yaxis_probe` | `test_yaxis_probe.cpp`, `GentleStop.cpp` | `GS_USE_LEARN`, `GS_USE_ELEV_SUPPRESS`, `GS_YAXIS_PROBE` | Y-axis diagnostic probe |
+
+`test_core` is not a self-checking assertion suite. It reads one settings line and then input rows
+from standard input and prints one line per step; the runner smoke-runs it with one deterministic
+step, and `tests/run_parity.js` drives it for the actual comparison.
+
+The two JavaScript tests are then executed with the discovered `node` executable:
+
+- `wasm-source/tests/run_parity.js` - randomized comparison of the C++ core against a reference
+  JavaScript braking engine. The runner passes the canonical panel source as the first argument and
+  the freshly built `test_core` executable as the second argument. You can also run it manually:
+  `node wasm-source/tests/run_parity.js [panel-js] [test-core-executable]`; the executable path may
+  instead be supplied through the `GS_TEST_CORE_EXE` environment variable.
+- `wasm-source/tests/test_panel.js` - panel smoke test over the canonical
+  `gentlestop-stage-panel/` package, covering the legacy, legacy-unbound and 2024 routes. It
+  resolves every file from its own location and needs no private `staging/` directory.
+
+Both scripts work from any current directory and exit non-zero on failure.
+
+### Results and exit codes
+
+The runner prints a per-test status (`PASS`, `FAIL` or `NOT RUN`), the individual exit codes, a
+per-area summary and an overall result. It continues through the whole matrix so every available
+result is reported, then:
+
+| Exit code | Meaning |
+|---|---|
+| `0` | Every required C++ and JavaScript test passed. |
+| `1` | At least one test was executed and failed. |
+| `2` | At least one required test could not run because a prerequisite was missing; the overall result is `PARTIAL`, never `PASS`. |
+
+A missing `cl.exe` or `node.exe` is reported explicitly and never counted as a pass.
+
+### Known limitation of the parity harness
+
+`run_parity.js` was written to compare the C++ core with the reference braking engine that used to
+live in the panel JavaScript. The canonical public panel package
+(`gentlestop-stage-panel/html_ui/InGamePanels/GentleStopToolbarControl/GentleStop.js`) does not
+contain that reference engine, so with the default arguments the harness reports that the reference
+markers are missing and exits `1`; `run_tests.ps1` reports this as `FAIL` rather than hiding it.
+Passing a panel source that does contain the reference engine as the first argument restores the
+original comparison. Keeping or retiring this harness is an open owner decision.
+
+### Host tests versus the production WASM
+
+`tools/run_tests.ps1` is the regression-test entry point only. `tools/build_wasm.ps1` is the
+production module build: it needs the MSFS 2024 SDK, the SDK's clang toolchain and a real link step,
+and it is not invoked by the regression runner. A passing host regression run does not rebuild,
+replace or validate the packaged `gentlestop.wasm`.
 
 ## Build
 1. In Visual Studio create a new project from the SDK's WASM module template

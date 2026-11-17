@@ -1,6 +1,52 @@
-const fs = require("fs"), cp = require("child_process");
-const src = fs.readFileSync(process.argv[2], "utf8");
-const a = src.indexOf("// Why braking is NOT allowed"), b = src.indexOf("function writeSimVars");
+// run_parity.js - randomized parity check of the C++ braking core against the
+// reference JavaScript braking engine.
+//
+// Usage:
+//   node run_parity.js [panel-js] [test-core-executable]
+//   GS_TEST_CORE_EXE=<path> node run_parity.js [panel-js]
+//
+//   panel-js             source file containing the reference engine.
+//                        Defaults to the canonical panel package of this repository.
+//   test-core-executable binary built from wasm-source/tests/test_core.cpp.
+//                        Required (argument 2 or GS_TEST_CORE_EXE): this harness
+//                        never expects a compiled binary inside the repository.
+//                        tools/run_tests.ps1 builds it in a temporary directory
+//                        and passes this path.
+//
+// Relative paths are resolved against the current working directory, so the
+// script can be started from the repository root or anywhere else.
+//
+// Exit code: 0 = every step matched, 1 = mismatch or harness failure.
+
+const fs = require("fs"), cp = require("child_process"), path = require("path");
+
+const repoRoot = path.resolve(__dirname, "..", "..");
+const defaultPanel = path.join(repoRoot, "gentlestop-stage-panel", "html_ui", "InGamePanels",
+  "GentleStopToolbarControl", "GentleStop.js");
+
+const panelPath = path.resolve(process.argv[2] || defaultPanel);
+const coreExe = path.resolve(process.argv[3] || process.env.GS_TEST_CORE_EXE || "");
+
+function fail(msg) {
+  console.error("PARITY TEST FAILED: " + msg);
+  process.exit(1);
+}
+
+if (!fs.existsSync(panelPath)) fail("reference panel source not found: " + panelPath);
+if (!coreExe) fail("no test_core executable was given. Build it with tools/run_tests.ps1 " +
+  "and pass its path as the second argument (or set GS_TEST_CORE_EXE).");
+if (!fs.existsSync(coreExe)) fail("test_core executable not found: " + coreExe);
+
+const src = fs.readFileSync(panelPath, "utf8");
+const startMarker = "// Why braking is NOT allowed", endMarker = "function writeSimVars";
+const a = src.indexOf(startMarker), b = src.indexOf(endMarker);
+if (a < 0 || b < 0 || b <= a) {
+  fail("the reference braking-engine markers (" + JSON.stringify(startMarker) + " .. " +
+    JSON.stringify(endMarker) + ") were not found in " + panelPath + ". " +
+    "This harness compares that reference engine against the C++ core; the canonical " +
+    "panel package no longer provides it. Supply an explicit panel-js argument that " +
+    "contains the reference engine, or retire this harness by owner decision.");
+}
 const extracted = src.slice(a, b);
 const clampSrc = "function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }";
 const codes = { "": 0, "Disabled": 1, "Airborne": 2, "Parking brake": 3, "Strobes on": 4, "Throttle high": 5, "Above speed limit": 6 };
@@ -22,9 +68,24 @@ for (let run = 0; run < 300; run++) {
     const dt = 0.004 + rnd()*0.196; ins.push({ y, g, sp, st, t1, t2, pk, dt });
     rows.push([y,g,sp,st,t1,t2,pk,dt].map(x => x.toPrecision(17)).join(" "));
   }
-  const out = cp.execFileSync("./test_core", { input: hdr + "\n" + rows.join("\n") + "\n" }).toString().trim().split("\n");
-  ins.forEach((i, k) => { const r = ref(i, i.dt), [cb, cg, cr, ca] = out[k].split(" ").map(Number); total++;
+  let out;
+  try {
+    out = cp.execFileSync(coreExe, { input: hdr + "\n" + rows.join("\n") + "\n",
+      cwd: path.dirname(coreExe), maxBuffer: 64 * 1024 * 1024 }).toString().trim().split("\n");
+  } catch (e) {
+    fail("could not execute " + coreExe + " (exit " + (e.status === undefined ? "?" : e.status) +
+      "): " + (e.message || e));
+  }
+  if (out.length !== ins.length) {
+    fail("the core returned " + out.length + " steps for " + ins.length + " inputs (run " + run + ")");
+  }
+  ins.forEach((i, k) => { const r = ref(i, i.dt), parts = out[k].split(" ").map(Number), cb = parts[0], cg = parts[1], cr = parts[2], ca = parts[3]; total++;
     const d = Math.abs(r.brake - cb); worst = Math.max(worst, d);
     if (d > 1e-9 || (r.gate?1:0) !== cg || codes[r.reason] !== cr || Math.abs(r.axis - ca) > 0) { mism++; if (mism < 5) console.log("MISMATCH run", run, "step", k, r, out[k]); } });
 }
 console.log(`steps compared: ${total}, mismatches: ${mism}, worst |brake diff|: ${worst}`);
+if (mism !== 0) {
+  console.error("PARITY TEST FAILED: the C++ core does not match the reference engine.");
+  process.exit(1);
+}
+console.log("PARITY TEST PASSED");
